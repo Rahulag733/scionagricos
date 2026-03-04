@@ -127,6 +127,7 @@ def get_revenue_trend(trader: Optional[str] = None, product: Optional[str] = Non
         shipments=("revenue", "count"),
     ).reset_index()
     grouped["gross_margin_pct"] = (grouped["margin"] / grouped["revenue"] * 100).round(2)
+    grouped = grouped.replace([float('inf'), float('-inf')], 0).fillna(0)
     return grouped.round(2).to_dict(orient="records")
 
 
@@ -173,6 +174,7 @@ def get_product_analysis(year: Optional[int] = None, trader: Optional[str] = Non
     ).reset_index()
     grouped["gross_margin_pct"] = (grouped["margin"] / grouped["revenue"] * 100).round(2)
     grouped["revenue_pct"] = (grouped["revenue"] / grouped["revenue"].sum() * 100).round(2)
+    grouped = grouped.replace([float('inf'), float('-inf')], 0).fillna(0)
     return grouped.sort_values("revenue", ascending=False).round(2).to_dict(orient="records")
 
 
@@ -193,6 +195,7 @@ def get_origin_analysis(year: Optional[int] = None, trader: Optional[str] = None
         shipments=("revenue", "count"),
     ).reset_index()
     grouped["gross_margin_pct"] = (grouped["margin"] / grouped["revenue"] * 100).round(2)
+    grouped = grouped.replace([float('inf'), float('-inf')], 0).fillna(0)
     return grouped.sort_values("revenue", ascending=False).round(2).to_dict(orient="records")
 
 
@@ -211,6 +214,7 @@ def get_trader_performance(year: Optional[int] = None) -> list[dict]:
         shipments=("revenue", "count"),
     ).reset_index()
     grouped["gross_margin_pct"] = (grouped["margin"] / grouped["revenue"] * 100).round(2)
+    grouped = grouped.replace([float('inf'), float('-inf')], 0).fillna(0)
     return grouped.sort_values(["year", "revenue"], ascending=[True, False]).round(2).to_dict(orient="records")
 
 
@@ -234,6 +238,7 @@ def get_profitability_matrix(year: Optional[int] = None, trader: Optional[str] =
     grouped["gross_margin_pct"] = (grouped["margin"] / grouped["revenue"] * 100).round(2)
     grouped["net_margin_pct"] = (grouped["margin"] * 0.85 / grouped["revenue"] * 100).round(2)
     grouped["ebitda"] = (grouped["margin"] * 0.85).round(2)
+    grouped = grouped.replace([float('inf'), float('-inf')], 0).fillna(0)
     return grouped.sort_values("gross_margin_pct", ascending=False).round(2).to_dict(orient="records")
 
 
@@ -259,7 +264,7 @@ def get_seasonal_data(year: Optional[int] = None, trader: Optional[str] = None,
     seasonal["gross_margin_pct"] = (seasonal["margin"] / seasonal["revenue"] * 100).round(2)
     max_rev = seasonal["revenue"].max()
     seasonal["intensity"] = (seasonal["revenue"] / max_rev * 100).round(1)
-    
+    seasonal = seasonal.replace([float('inf'), float('-inf')], 0).fillna(0)
     return seasonal.sort_values("month").round(2).to_dict(orient="records")
 
 
