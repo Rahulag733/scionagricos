@@ -13,6 +13,7 @@ import os
 
 from app.routers.api import router
 from app.services.data_loader import get_data
+from app.db import is_db_configured, init_tables
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -49,10 +50,19 @@ if frontend_dir.exists():
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🌿 ScionAgricos backend starting up...")
+    logger.info("ScionAgricos backend starting up...")
     data = get_data()
     total = sum(len(v) for v in data.values())
-    logger.info(f"✅ Loaded {total} records from {len(data)} datasets: {list(data.keys())}")
+    logger.info(f"Loaded {total} records from {len(data)} datasets: {list(data.keys())}")
+
+    # Initialize RDS tables if DATABASE_URL is configured
+    if is_db_configured():
+        try:
+            init_tables()
+        except Exception as e:
+            logger.warning(f"RDS init skipped: {e}")
+    else:
+        logger.info("DATABASE_URL not set — skipping RDS init (transit_time/seasonality unavailable)")
 
 
 @app.get("/", include_in_schema=False)

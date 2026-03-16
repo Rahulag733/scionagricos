@@ -5,8 +5,11 @@ All REST endpoints for the Financial Forecasting & Shipment Planning System.
 
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
+from pydantic import BaseModel, Field
 from ..services import analytics
 from ..services.data_loader import get_data, refresh_data
+from ..db import is_db_configured, get_session
+from ..models import TransitTime, Seasonality
 
 router = APIRouter()
 
@@ -194,3 +197,201 @@ def kpi_full(
     kpi = analytics.get_kpi_summary(year, trader)
     trend = analytics.get_revenue_trend(trader)
     return {"kpis": kpi, "trend": trend}
+
+
+# ─── Pydantic Schemas ─────────────────────────────────────────────────────────
+
+class TransitTimeIn(BaseModel):
+    origin: str
+    destination: str
+    transit_type: str = Field(..., pattern="^(import|export)$")
+    transit_days_min: Optional[int] = None
+    transit_days_avg: int
+    transit_days_max: Optional[int] = None
+
+
+class SeasonalityIn(BaseModel):
+    product: str
+    origin: str
+    month: int = Field(..., ge=1, le=12)
+    availability: Optional[str] = Field(None, pattern="^(high|medium|low)$")
+    is_peak_season: bool = False
+    notes: Optional[str] = None
+
+
+def _require_db():
+    if not is_db_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="DATABASE_URL not configured. Set it in your environment to use RDS features."
+        )
+
+
+# ─── Transit Time ─────────────────────────────────────────────────────────────
+
+@router.get("/reference/transit-time")
+def list_transit_times(
+    origin: Optional[str] = Query(None),
+    destination: Optional[str] = Query(None),
+    transit_type: Optional[str] = Query(None, pattern="^(import|export)$"),
+):
+    """List all transit time records. Filter by origin, destination, or type."""
+    _require_db()
+    session = get_session()
+    try:
+        q = session.query(TransitTime)
+        if origin:
+            q = q.filter(TransitTime.origin.ilike(f"%{origin}%"))
+        if destination:
+            q = q.filter(TransitTime.destination.ilike(f"%{destination}%"))
+        if transit_type:
+            q = q.filter(TransitTime.transit_type == transit_type)
+        return [r.to_dict() for r in q.order_by(TransitTime.origin).all()]
+    finally:
+        session.close()
+
+
+@router.post("/reference/transit-time", status_code=201)
+def create_transit_time(payload: TransitTimeIn):
+    """Add a new transit time record."""
+    _require_db()
+    session = get_session()
+    try:
+        record = TransitTime(**payload.model_dump())
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+        return record.to_dict()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.put("/reference/transit-time/{record_id}")
+def update_transit_time(record_id: int, payload: TransitTimeIn):
+    """Update an existing transit time record."""
+    _require_db()
+    session = get_session()
+    try:
+        record = session.query(TransitTime).filter(TransitTime.id == record_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="Record not found")
+        for key, value in payload.model_dump().items():
+            setattr(record, key, value)
+        session.commit()
+        session.refresh(record)
+        return record.to_dict()
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.delete("/reference/transit-time/{record_id}", status_code=204)
+def delete_transit_time(record_id: int):
+    """Delete a transit time record."""
+    _require_db()
+    session = get_session()
+    try:
+        record = session.query(TransitTime).filter(TransitTime.id == record_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="Record not found")
+        session.delete(record)
+        session.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+# ─── Seasonality ──────────────────────────────────────────────────────────────
+
+@router.get("/reference/seasonality")
+def list_seasonality(
+    product: Optional[str] = Query(None),
+    origin: Optional[str] = Query(None),
+    month: Optional[int] = Query(None, ge=1, le=12),
+):
+    """List all seasonality records. Filter by product, origin, or month."""
+    _require_db()
+    session = get_session()
+    try:
+        q = session.query(Seasonality)
+        if product:
+            q = q.filter(Seasonality.product.ilike(f"%{product}%"))
+        if origin:
+            q = q.filter(Seasonality.origin.ilike(f"%{origin}%"))
+        if month:
+            q = q.filter(Seasonality.month == month)
+        return [r.to_dict() for r in q.order_by(Seasonality.product, Seasonality.month).all()]
+    finally:
+        session.close()
+
+
+@router.post("/reference/seasonality", status_code=201)
+def create_seasonality(payload: SeasonalityIn):
+    """Add a new seasonality record."""
+    _require_db()
+    session = get_session()
+    try:
+        record = Seasonality(**payload.model_dump())
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+        return record.to_dict()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.put("/reference/seasonality/{record_id}")
+def update_seasonality(record_id: int, payload: SeasonalityIn):
+    """Update an existing seasonality record."""
+    _require_db()
+    session = get_session()
+    try:
+        record = session.query(Seasonality).filter(Seasonality.id == record_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="Record not found")
+        for key, value in payload.model_dump().items():
+            setattr(record, key, value)
+        session.commit()
+        session.refresh(record)
+        return record.to_dict()
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
+
+
+@router.delete("/reference/seasonality/{record_id}", status_code=204)
+def delete_seasonality(record_id: int):
+    """Delete a seasonality record."""
+    _require_db()
+    session = get_session()
+    try:
+        record = session.query(Seasonality).filter(Seasonality.id == record_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="Record not found")
+        session.delete(record)
+        session.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
